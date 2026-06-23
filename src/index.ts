@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import * as dotenv from 'dotenv';
 import WebSocket from 'ws';
 import * as cheerio from 'cheerio';
+import express, { Request, Response } from 'express';
 
 dotenv.config();
 
@@ -18,30 +19,45 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
   }
 });
 
-// Replaced mock with functional Cheerio extraction
+const app = express();
+// Increase payload limit for large DOM structures
+app.use(express.json({ limit: '10mb' }));
+
 function parseHtmlPayload(html: string) {
   console.log(`Parsing HTML payload (${html.length} bytes)...`);
   const $ = cheerio.load(html);
   
-  const extracted = {
+  return {
     title: $('title').text() || 'No title found',
     description: $('meta[name="description"]').attr('content') || 'No description found',
-    content: $('body').text().replace(/\s+/g, ' ').trim() // Basic text cleanup
+    content: $('body').text().replace(/\s+/g, ' ').trim()
   };
-  
-  return extracted;
 }
 
-async function processIncomingRequest(apiKeyHash: string, htmlPayload: string) {
-  console.log("--- Processing Request ---");
+app.post('/api/parse', async (req: Request, res: Response): Promise<void> => {
+  console.log("--- Incoming API Request ---");
+
+  // Extract key from "Authorization: Bearer <key>"
+  const apiKeyHash = req.headers.authorization?.replace('Bearer ', '');
+  const htmlPayload = req.body.html;
+
+  if (!apiKeyHash) {
+    res.status(401).json({ error: "Missing Authorization header" });
+    return;
+  }
+
+  if (!htmlPayload) {
+    res.status(400).json({ error: "Missing 'html' field in JSON body" });
+    return;
+  }
 
   const { data: authData, error: authError } = await supabase.rpc('authenticate_api_key', {
     p_key_hash: apiKeyHash
   });
 
   if (authError || !authData || authData.length === 0) {
-    console.error("Authentication failed: Invalid or inactive API key.");
-    if (authError) console.error("Auth DB Error:", authError.message);
+    console.error("Auth failed:", authError?.message || "Invalid key");
+    res.status(401).json({ error: "Invalid or inactive API key." });
     return;
   }
 
@@ -50,7 +66,8 @@ async function processIncomingRequest(apiKeyHash: string, htmlPayload: string) {
 
   const executionCost = 1;
   if (balance < executionCost) {
-    console.error("Request rejected: Insufficient balance.");
+    console.error("Rejected: Insufficient balance.");
+    res.status(402).json({ error: "Insufficient balance." });
     return;
   }
 
@@ -62,26 +79,24 @@ async function processIncomingRequest(apiKeyHash: string, htmlPayload: string) {
   });
 
   if (debitError || !debitSuccess) {
-    console.error("Transaction failed: Charge could not be processed.");
-    if (debitError) console.error("Database Error Details:", debitError.message);
+    console.error("DB Error:", debitError?.message);
+    res.status(500).json({ error: "Transaction failed. Charge could not be processed." });
     return;
   }
 
   console.log(`Transaction successful. Remaining balance: ${balance - executionCost}`);
-  console.log(`Result dispatched to client:`, extractedData);
-}
+  
+  res.status(200).json({
+    success: true,
+    data: extractedData,
+    billing: {
+      cost: executionCost,
+      remaining_balance: balance - executionCost
+    }
+  });
+});
 
-// Updated mock HTML to test the parser
-const mockHtml = `
-  <html>
-    <head>
-      <title>ParseNode Target</title>
-      <meta name="description" content="Agentic HTML extraction payload">
-    </head>
-    <body>
-      <div id='target'>This is the core text data that the agent needs to read.</div>
-    </body>
-  </html>
-`;
-
-processIncomingRequest('dummy_hash_value_for_sk_test_123', mockHtml);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`ParseNode Gateway actively listening on port ${PORT}`);
+});

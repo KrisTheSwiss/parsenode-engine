@@ -10,6 +10,7 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^26.0.0",
     "@types/ws": "^8.18.1",
     "tsx": "^4.22.4",
@@ -19,6 +20,7 @@
     "@supabase/supabase-js": "^2.108.2",
     "cheerio": "^1.2.0",
     "dotenv": "^17.4.2",
+    "express": "^5.2.1",
     "ws": "^8.21.0"
   }
 }
