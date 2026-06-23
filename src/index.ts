@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import * as dotenv from 'dotenv';
 import WebSocket from 'ws';
+import * as cheerio from 'cheerio';
 
 dotenv.config();
 
@@ -13,13 +14,22 @@ if (!supabaseUrl || !supabaseKey) {
 
 const supabase = createClient(supabaseUrl, supabaseKey, {
   realtime: {
-    transport: WebSocket
+    transport: WebSocket as any
   }
 });
 
-function parseHtmlPayload(html: string): string {
+// Replaced mock with functional Cheerio extraction
+function parseHtmlPayload(html: string) {
   console.log(`Parsing HTML payload (${html.length} bytes)...`);
-  return "extracted_data_stub";
+  const $ = cheerio.load(html);
+  
+  const extracted = {
+    title: $('title').text() || 'No title found',
+    description: $('meta[name="description"]').attr('content') || 'No description found',
+    content: $('body').text().replace(/\s+/g, ' ').trim() // Basic text cleanup
+  };
+  
+  return extracted;
 }
 
 async function processIncomingRequest(apiKeyHash: string, htmlPayload: string) {
@@ -61,5 +71,17 @@ async function processIncomingRequest(apiKeyHash: string, htmlPayload: string) {
   console.log(`Result dispatched to client:`, extractedData);
 }
 
-const mockHtml = "<html><body><div id='target'>ParseNode payload</div></body></html>";
+// Updated mock HTML to test the parser
+const mockHtml = `
+  <html>
+    <head>
+      <title>ParseNode Target</title>
+      <meta name="description" content="Agentic HTML extraction payload">
+    </head>
+    <body>
+      <div id='target'>This is the core text data that the agent needs to read.</div>
+    </body>
+  </html>
+`;
+
 processIncomingRequest('dummy_hash_value_for_sk_test_123', mockHtml);
